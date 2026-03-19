@@ -1,0 +1,16 @@
+{
+  "data_mode": "real",
+  "rows": 70654,
+  "features": 153,
+  "date_range": [
+    "2009-01-30",
+    "2021-12-31"
+  ],
+  "best_model_by_r2": "NeuralNetwork",
+  "best_test_r2": 0.619502654701483,
+  "best_portfolio_by_sharpe": "NeuralNetwork",
+  "best_test_sharpe": 1.4060894778716169,
+  "output_dir": "C:\\Users\\perso\\OneDrive\\Documents\\Code Resume\\portfolio_projects\\statistical-learning-stock-return-prediction\\outputs\\public_proxy_run",
+  "charts_dir": "C:\\Users\\perso\\OneDrive\\Documents\\Code Resume\\portfolio_projects\\statistical-learning-stock-return-prediction\\outputs\\public_proxy_run\\charts",
+  "chart_count": 16
+}

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+outputs/
+*.log
+data/datashare.zip
+data/datashare.csv
+data/public_proxy_return_predictability_2009to2021.csv
