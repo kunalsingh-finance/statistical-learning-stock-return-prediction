@@ -10,6 +10,8 @@ from .pipeline import RunConfig, run_project
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the FA590 stock return prediction workflow.")
     parser.add_argument("--data-path", default=None, help="Path to the return prediction CSV.")
+    parser.add_argument("--data-kind", choices=["supplied", "public_proxy"], default="supplied", help="Provenance label; supplied data is never assumed to be validated market returns.")
+    parser.add_argument("--skip-neural-network", action="store_true", help="Run five scikit-learn models without the optional TensorFlow runtime.")
     parser.add_argument("--output-dir", default="outputs/latest_run", help="Directory for CSV outputs and charts.")
     parser.add_argument("--rf-estimators", type=int, default=50, help="Number of trees for Random Forest.")
     parser.add_argument("--gb-estimators", type=int, default=50, help="Number of trees for Gradient Boosting.")
@@ -31,6 +33,8 @@ def main() -> None:
         nn_batch_size=args.nn_batch_size,
         demo_months=args.demo_months,
         demo_stocks=args.demo_stocks,
+        data_kind=args.data_kind,
+        skip_neural_network=args.skip_neural_network,
     )
     summary = run_project(config)
     print(json.dumps(summary, indent=2))
