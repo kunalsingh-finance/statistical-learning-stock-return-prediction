@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -15,16 +17,13 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
+from .panel import align_next_month_target, prepare_features, chronological_split, select_model
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
-
-import tensorflow as tf
-from tensorflow.keras import callbacks, layers, models
-
 
 @dataclass
 class RunConfig:
@@ -37,6 +36,8 @@ class RunConfig:
     nn_batch_size: int = 256
     demo_months: int = 36
     demo_stocks: int = 180
+    data_kind: str = "supplied"
+    skip_neural_network: bool = False
 
 
 def set_plot_style() -> None:
@@ -48,7 +49,6 @@ def set_plot_style() -> None:
 
 def set_random_seeds(seed: int) -> None:
     np.random.seed(seed)
-    tf.random.set_seed(seed)
 
 
 def generate_demo_dataset(months: int, stocks_per_month: int, seed: int) -> pd.DataFrame:
@@ -92,6 +92,8 @@ def generate_demo_dataset(months: int, stocks_per_month: int, seed: int) -> pd.D
                 {
                     "permno": permno,
                     "DATE": date.strftime("%Y-%m-%d"),
+                    "target_DATE": (date + pd.offsets.MonthEnd(1)).strftime("%Y-%m-%d"),
+                    "target_source": "synthetic_next_month_return",
                     "RET": ret,
                     "momentum_1m": momentum_1m,
                     "momentum_6m": momentum_6m,
@@ -122,86 +124,19 @@ def load_dataset(config: RunConfig) -> Tuple[pd.DataFrame, str]:
         data_path = Path(config.data_path).expanduser().resolve()
         if not data_path.exists():
             raise FileNotFoundError(f"Dataset not found: {data_path}")
-        return pd.read_csv(data_path), "real"
-    return generate_demo_dataset(config.demo_months, config.demo_stocks, config.random_seed), "demo"
+        return pd.read_csv(data_path), config.data_kind
+    return generate_demo_dataset(config.demo_months, config.demo_stocks, config.random_seed), "synthetic"
 
 
 def preprocess(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str], List[str], str]:
-    id_cols = ["permno", "DATE"]
-    if "name" in df.columns:
-        id_cols.append("name")
-
-    target = "RET"
-    feature_cols = [col for col in df.columns if col not in id_cols + [target]]
-
-    df = df.copy()
-    df[target] = pd.to_numeric(df[target], errors="coerce")
-    df = df.sort_values(["permno", "DATE"])
-    df[feature_cols] = df.groupby("permno")[feature_cols].ffill()
-
-    for col in feature_cols:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-            if df[col].isnull().any():
-                df[col] = df[col].fillna(df[col].median())
-
-    df = df.dropna(subset=[target])
-
-    if "sic2" in df.columns and "sic2" in feature_cols:
-        sic2_dummies = pd.get_dummies(df["sic2"], prefix="sic2", drop_first=True)
-        df = pd.concat([df.drop(columns=["sic2"]), sic2_dummies], axis=1)
-        feature_cols = [col for col in df.columns if col not in id_cols + [target]]
-
-    return df.reset_index(drop=True), id_cols, feature_cols, target
+    panel, features = prepare_features(align_next_month_target(df))
+    return panel, ["permno", "DATE", "target_DATE"], features, "RET"
 
 
 def train_val_test_split(
     df: pd.DataFrame, feature_cols: List[str], target: str
 ) -> Dict[str, pd.DataFrame | np.ndarray | List[str] | StandardScaler]:
-    df = df.sort_values("DATE").reset_index(drop=True)
-    unique_dates = sorted(df["DATE"].unique())
-    n_dates = len(unique_dates)
-    train_end = max(int(0.6 * n_dates), 1)
-    val_end = max(int(0.8 * n_dates), train_end + 1)
-
-    train_dates = unique_dates[:train_end]
-    val_dates = unique_dates[train_end:val_end]
-    test_dates = unique_dates[val_end:]
-
-    train_df = df[df["DATE"].isin(train_dates)].copy()
-    val_df = df[df["DATE"].isin(val_dates)].copy()
-    test_df = df[df["DATE"].isin(test_dates)].copy()
-
-    x_train = train_df[feature_cols]
-    x_val = val_df[feature_cols]
-    x_test = test_df[feature_cols]
-    y_train = train_df[target]
-    y_val = val_df[target]
-    y_test = test_df[target]
-
-    scaler = StandardScaler()
-    x_train_scaled = scaler.fit_transform(x_train)
-    x_val_scaled = scaler.transform(x_val)
-    x_test_scaled = scaler.transform(x_test)
-
-    return {
-        "train_df": train_df,
-        "val_df": val_df,
-        "test_df": test_df,
-        "train_dates": train_dates,
-        "val_dates": val_dates,
-        "test_dates": test_dates,
-        "X_train": x_train,
-        "X_val": x_val,
-        "X_test": x_test,
-        "y_train": y_train,
-        "y_val": y_val,
-        "y_test": y_test,
-        "X_train_scaled": x_train_scaled,
-        "X_val_scaled": x_val_scaled,
-        "X_test_scaled": x_test_scaled,
-        "scaler": scaler,
-    }
+    return chronological_split(df, feature_cols)
 
 
 def train_models(split: Dict[str, object], config: RunConfig) -> Tuple[Dict[str, dict], Dict[str, float], pd.DataFrame, RandomForestRegressor]:
@@ -260,6 +195,12 @@ def train_models(split: Dict[str, object], config: RunConfig) -> Tuple[Dict[str,
     training_times["GradientBoosting"] = time.time() - start
     results["GradientBoosting"] = {"train": gb.predict(x_train), "val": gb.predict(x_val), "test": gb.predict(x_test)}
 
+    if config.skip_neural_network:
+        return results, training_times, pd.DataFrame(), rf
+
+    import tensorflow as tf
+    from tensorflow.keras import callbacks, layers, models
+    tf.random.set_seed(config.random_seed)
     start = time.time()
     nn = models.Sequential(
         [
@@ -311,19 +252,19 @@ def portfolio_performance(df_subset: pd.DataFrame, predictions: np.ndarray, date
     monthly_returns: List[float] = []
     for date in dates_list:
         date_data = df_temp[df_temp["DATE"] == date]
-        if len(date_data) < 20:
+        if date_data.empty:
             continue
-        top_n = min(100, len(date_data))
+        top_n = max(1, int(np.ceil(0.2 * len(date_data))))
         top_bucket = date_data.nlargest(top_n, "Prediction")
         monthly_returns.append(float(top_bucket[target].mean()))
 
-    volatility = float(np.std(monthly_returns)) if monthly_returns else 0.0
+    volatility = float(np.std(monthly_returns, ddof=1)) if len(monthly_returns) > 1 else 0.0
     avg_return = float(np.mean(monthly_returns)) if monthly_returns else 0.0
-    sharpe = avg_return / volatility if volatility else 0.0
+    sharpe = avg_return / volatility if volatility else float("nan")
     return {
         "Avg_Return": avg_return,
         "Volatility": volatility,
-        "Sharpe_Ratio": sharpe,
+        "Monthly_Return_Volatility_Ratio": sharpe,
         "N_Months": len(monthly_returns),
         "Returns": monthly_returns,
     }
@@ -503,7 +444,7 @@ def save_performance_charts(perf_df: pd.DataFrame, results: Dict[str, dict], spl
     plt.savefig(charts_dir / "10_mse_comparison.png", bbox_inches="tight")
     plt.close()
 
-    best_model = test_perf.loc[test_perf["R2"].idxmax(), "Model"]
+    best_model = select_model(perf_df)
     y_test = split["y_test"]
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     axes[0].scatter(y_test, results[best_model]["test"], alpha=0.3, s=10, color="steelblue")
@@ -536,8 +477,8 @@ def save_portfolio_outputs(results: Dict[str, dict], split: Dict[str, object], t
     for model_name, preds in results.items():
         port_train = portfolio_performance(train_df, preds["train"], train_dates, target)
         port_test = portfolio_performance(test_df, preds["test"], test_dates, target)
-        portfolio_metrics.append({"Model": model_name, "Dataset": "Train", "Avg_Return": port_train["Avg_Return"], "Volatility": port_train["Volatility"], "Sharpe_Ratio": port_train["Sharpe_Ratio"]})
-        portfolio_metrics.append({"Model": model_name, "Dataset": "Test", "Avg_Return": port_test["Avg_Return"], "Volatility": port_test["Volatility"], "Sharpe_Ratio": port_test["Sharpe_Ratio"]})
+        for dataset_name, metrics in [("Train", port_train), ("Test", port_test)]:
+            portfolio_metrics.append({"Model": model_name, "Dataset": dataset_name, "Avg_Return": metrics["Avg_Return"], "Volatility": metrics["Volatility"], "Monthly_Return_Volatility_Ratio": metrics["Monthly_Return_Volatility_Ratio"], "N_Months": metrics["N_Months"]})
         portfolio_returns[model_name] = port_test["Returns"]
 
     port_df = pd.DataFrame(portfolio_metrics)
@@ -549,8 +490,8 @@ def save_portfolio_outputs(results: Dict[str, dict], split: Dict[str, object], t
     axes[0].set_title("Portfolio Average Return")
     axes[1].barh(port_test_df["Model"], port_test_df["Volatility"], color=colors)
     axes[1].set_title("Portfolio Volatility")
-    axes[2].barh(port_test_df["Model"], port_test_df["Sharpe_Ratio"], color=colors)
-    axes[2].set_title("Portfolio Sharpe Ratio")
+    axes[2].barh(port_test_df["Model"], port_test_df["Monthly_Return_Volatility_Ratio"], color=colors)
+    axes[2].set_title("Monthly Return / Volatility (zero hurdle)")
     plt.tight_layout()
     plt.savefig(charts_dir / "12_portfolio_metrics.png", bbox_inches="tight")
     plt.close()
@@ -628,7 +569,7 @@ def save_risk_return_tradeoff(port_df: pd.DataFrame, charts_dir: Path) -> None:
     plt.close()
 
 
-def run_project(config: RunConfig) -> dict:
+def _run_project(config: RunConfig) -> dict:
     set_plot_style()
     set_random_seeds(config.random_seed)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -638,17 +579,21 @@ def run_project(config: RunConfig) -> dict:
     raw_df, data_mode = load_dataset(config)
     processed_df, _, feature_cols, target = preprocess(raw_df)
     split = train_val_test_split(processed_df, feature_cols, target)
+    feature_cols = split["feature_cols"]
 
     save_target_distribution(processed_df, target, charts_dir)
     save_returns_over_time(processed_df, target, charts_dir)
-    correlations = compute_correlations(processed_df, feature_cols, target)
+    correlations = compute_correlations(processed_df, [col for col in feature_cols if col in processed_df], target)
     save_feature_correlations(correlations, charts_dir)
     save_correlation_heatmap(processed_df, correlations, target, charts_dir)
     save_missing_data_pattern(raw_df, charts_dir)
     save_data_split_chart(split, charts_dir)
 
     results, training_times, history_df, rf_model = train_models(split, config)
-    save_nn_history(history_df, charts_dir)
+    if not history_df.empty:
+        save_nn_history(history_df, charts_dir)
+    else:
+        (charts_dir / "07_nn_training_history.png").unlink(missing_ok=True)
     save_training_times(training_times, charts_dir)
 
     performance_metrics = []
@@ -658,6 +603,13 @@ def run_project(config: RunConfig) -> dict:
         performance_metrics.append(evaluate_predictions(split["y_test"], preds["test"], "Test", model_name))
     perf_df = pd.DataFrame(performance_metrics)
     perf_df.to_csv(config.output_dir / "predictive_performance_detailed.csv", index=False)
+    prediction_frames = []
+    for model_name, preds in results.items():
+        for key, dataset_name in [("train", "Train"), ("val", "Validation"), ("test", "Test")]:
+            records = split[f"{key}_df"][["permno", "DATE", "target_DATE", "RET"]].copy()
+            records["Model"], records["Dataset"], records["Prediction"] = model_name, dataset_name, preds[key]
+            prediction_frames.append(records)
+    pd.concat(prediction_frames, ignore_index=True).to_csv(config.output_dir / "predictions.csv", index=False)
     best_model = save_performance_charts(perf_df, results, split, charts_dir)
 
     port_df, _ = save_portfolio_outputs(results, split, target, charts_dir)
@@ -669,21 +621,51 @@ def run_project(config: RunConfig) -> dict:
     save_train_vs_test_chart(perf_df, charts_dir)
     save_risk_return_tradeoff(port_df, charts_dir)
 
-    best_r2 = float(perf_df.query("Dataset == 'Test'").sort_values("R2", ascending=False).iloc[0]["R2"])
-    best_port = port_df.query("Dataset == 'Test'").sort_values("Sharpe_Ratio", ascending=False).iloc[0]
+    selected_test = perf_df[(perf_df["Dataset"] == "Test") & (perf_df["Model"] == best_model)].iloc[0]
+    selected_port = port_df[(port_df["Dataset"] == "Test") & (port_df["Model"] == best_model)].iloc[0]
 
     summary = {
         "data_mode": data_mode,
         "rows": int(processed_df.shape[0]),
         "features": int(len(feature_cols)),
         "date_range": [str(processed_df["DATE"].min()), str(processed_df["DATE"].max())],
-        "best_model_by_r2": best_model,
-        "best_test_r2": best_r2,
-        "best_portfolio_by_sharpe": str(best_port["Model"]),
-        "best_test_sharpe": float(best_port["Sharpe_Ratio"]),
-        "output_dir": str(config.output_dir),
-        "charts_dir": str(charts_dir),
-        "chart_count": 16,
+        "target": "next calendar month RET",
+        "target_source": sorted(processed_df["target_source"].unique().tolist()) if "target_source" in processed_df else ["supplied return field; accounting and availability unverified"],
+        "selection_rule": "lowest validation MSE; alphabetical model name breaks ties",
+        "selected_model": best_model,
+        "selected_test_r2": float(selected_test["R2"]),
+        "selected_test_monthly_return_volatility_ratio": float(selected_port["Monthly_Return_Volatility_Ratio"]),
+        "split": {key: {"rows": len(split[f"{key}_df"]), "feature_start": str(split[f"{key}_df"]["DATE"].min().date()), "feature_end": str(split[f"{key}_df"]["DATE"].max().date()), "latest_target": str(split[f"{key}_df"]["target_DATE"].max().date())} for key in ["train", "val", "test"]},
+        "preprocessing": "past-only forward fill; training median/industry categories/scaler; boundary labels purged",
+        "input_sha256": hashlib.sha256(Path(config.data_path).read_bytes()).hexdigest() if config.data_path else None,
+        "runtime": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__},
+        "configuration": {"seed": config.random_seed, "rf_estimators": config.rf_estimators, "gb_estimators": config.gb_estimators, "nn_epochs": config.nn_epochs, "neural_network_enabled": not config.skip_neural_network, "demo_months": config.demo_months, "demo_stocks": config.demo_stocks},
+        "portfolio": "equal-weight top forecast quintile; gross, zero hurdle, monthly ratio; no costs or investability claim",
+        "chart_count": len(list(charts_dir.glob("*.png"))),
     }
     (config.output_dir / "run_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
+
+
+def run_project(config: RunConfig) -> dict:
+    """Keep a failed rebuild from advertising a previous run as current."""
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    status_path = config.output_dir / "run_status.json"
+    status_path.write_text(json.dumps({"status": "BUILDING"}), encoding="utf-8")
+    try:
+        summary = _run_project(config)
+        artifacts = [*config.output_dir.glob("*.csv"), config.output_dir / "run_summary.json",
+                     * (config.output_dir / "charts").glob("*.png")]
+        def digest(path: Path) -> str:
+            raw = path.read_bytes()
+            if path.suffix in {".csv", ".json"}:
+                raw = raw.replace(b"\r\n", b"\n")
+            return hashlib.sha256(raw).hexdigest()
+
+        hashes = {path.relative_to(config.output_dir).as_posix(): digest(path)
+                  for path in sorted(artifacts)}
+        status_path.write_text(json.dumps({"status": "SUCCESS", "text_identity": "CSV/JSON CRLF normalized to LF; binary bytes unchanged", "artifact_sha256": hashes}, indent=2), encoding="utf-8")
+        return summary
+    except Exception as error:
+        status_path.write_text(json.dumps({"status": "ERROR", "error_type": type(error).__name__}), encoding="utf-8")
+        raise

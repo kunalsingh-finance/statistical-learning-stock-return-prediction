@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
+from .panel import align_next_month_target
 
 
 def normalize_date(series: pd.Series) -> pd.Series:
@@ -48,6 +49,8 @@ def build_proxy_dataset(zip_path: Path, out_path: Path, max_permnos: int) -> pd.
 
     df = pd.concat(chunks, ignore_index=True)
     df = df.dropna(subset=["permno", "DATE", "RET"]).sort_values(["permno", "DATE"]).reset_index(drop=True)
+    df = align_next_month_target(df)
+    df["target_source"] = "next_month_mom1m_public_proxy; not CRSP returns"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
     return df

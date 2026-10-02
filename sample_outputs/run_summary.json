@@ -1,16 +1,55 @@
 {
-  "data_mode": "real",
-  "rows": 70654,
-  "features": 153,
+  "data_mode": "synthetic",
+  "rows": 2880,
+  "features": 19,
   "date_range": [
-    "2009-01-30",
-    "2021-12-31"
+    "2019-01-31 00:00:00",
+    "2021-12-31 00:00:00"
   ],
-  "best_model_by_r2": "NeuralNetwork",
-  "best_test_r2": 0.619502654701483,
-  "best_portfolio_by_sharpe": "NeuralNetwork",
-  "best_test_sharpe": 1.4060894778716169,
-  "output_dir": "C:\\Users\\perso\\OneDrive\\Documents\\Code Resume\\portfolio_projects\\statistical-learning-stock-return-prediction\\outputs\\public_proxy_run",
-  "charts_dir": "C:\\Users\\perso\\OneDrive\\Documents\\Code Resume\\portfolio_projects\\statistical-learning-stock-return-prediction\\outputs\\public_proxy_run\\charts",
-  "chart_count": 16
+  "target": "next calendar month RET",
+  "target_source": [
+    "synthetic_next_month_return"
+  ],
+  "selection_rule": "lowest validation MSE; alphabetical model name breaks ties",
+  "selected_model": "OLS",
+  "selected_test_r2": 0.15971950385010814,
+  "selected_test_monthly_return_volatility_ratio": 0.37200880698499705,
+  "split": {
+    "train": {
+      "rows": 1600,
+      "feature_start": "2019-01-31",
+      "feature_end": "2020-08-31",
+      "latest_target": "2020-09-30"
+    },
+    "val": {
+      "rows": 480,
+      "feature_start": "2020-10-31",
+      "feature_end": "2021-03-31",
+      "latest_target": "2021-04-30"
+    },
+    "test": {
+      "rows": 640,
+      "feature_start": "2021-05-31",
+      "feature_end": "2021-12-31",
+      "latest_target": "2022-01-31"
+    }
+  },
+  "preprocessing": "past-only forward fill; training median/industry categories/scaler; boundary labels purged",
+  "input_sha256": null,
+  "runtime": {
+    "python": "3.11.9",
+    "numpy": "2.3.5",
+    "pandas": "2.2.3"
+  },
+  "configuration": {
+    "seed": 42,
+    "rf_estimators": 50,
+    "gb_estimators": 50,
+    "nn_epochs": 25,
+    "neural_network_enabled": false,
+    "demo_months": 36,
+    "demo_stocks": 80
+  },
+  "portfolio": "equal-weight top forecast quintile; gross, zero hurdle, monthly ratio; no costs or investability claim",
+  "chart_count": 15
 }

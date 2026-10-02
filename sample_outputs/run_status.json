@@ -1,0 +1,26 @@
+{
+  "status": "SUCCESS",
+  "text_identity": "CSV/JSON CRLF normalized to LF; binary bytes unchanged",
+  "artifact_sha256": {
+    "charts/01_target_distribution.png": "fde7098bd50d48f7b08d1e04811ce72b75b469623acee69c5f88e20ac4498838",
+    "charts/02_returns_over_time.png": "1987286f127483484ba4c59eb4d64ba574069a7ada8a434801cb4a7307d0cb56",
+    "charts/03_feature_correlations.png": "81ae137b92dda62eaf3befd6ebf582b90b21ad784afda031eb23265593b28cdf",
+    "charts/04_correlation_heatmap.png": "d0a66ad51a19a46db08e8dc13763bf680aee3cf8c7e341092a71a988a3e9cf6a",
+    "charts/05_missing_data_pattern.png": "66027dc917b5646909ff6d05e4f6071adab7cf86a73b5eee51fd339f2193368e",
+    "charts/06_data_split.png": "0e662c1b765e5acd80e6ff5fb640779763cc0d6ae7e11b43694b458e02c6beb3",
+    "charts/08_training_times.png": "89161cc38922d2b6d4483ecb65bc144ed18016414f437a157360f9e4ae5e54b3",
+    "charts/09_r2_comparison.png": "b9975ef067eed8b6a71a267ee9bfe7a1d2b67bbebd9a9f2202178fc060818e84",
+    "charts/10_mse_comparison.png": "6d333902a66f1cb13e62f2c588aff889b42176a9020fc0276e93790c6bb73b0b",
+    "charts/11_actual_vs_predicted.png": "d2002b461b45cf3fe5a66978b83c8aa21f9441a0be51024e9e3f6cfea10a1e11",
+    "charts/12_portfolio_metrics.png": "a3c717f9727aeb69ed3ca3ad31078941fa1c1ecf028b0076830173d10904d20c",
+    "charts/13_cumulative_returns.png": "f8c09af13ea34e4339eafe9eea06d6252ab21c8a4818b6a8a3c86b2df6be3d29",
+    "charts/14_feature_importance.png": "d9ab779d680b96847f0a1d59d03d454ba5ef716271b98f358e002cd631493762",
+    "charts/15_train_vs_test.png": "5f666a587c6a87dcf486b83cc03a89f284ef7e3460f09f749a449f963bc61739",
+    "charts/16_risk_return_tradeoff.png": "98da11a444076a55ff7da9812be138f280555358d7af396d599303fa045a3f7f",
+    "feature_importance.csv": "7358e9dacc71429e5200a82db22f94b4839cf1d407e2cb8946e685893a24d46f",
+    "portfolio_performance.csv": "3dc73f2ca8c96f2de57e9d8d961dc6160126884c433f661984a3ee53d031cd8c",
+    "predictions.csv": "440e9ea9d2f6984a00bb46d7224165b0f3735536491ce8b7365d33c4d6cf154f",
+    "predictive_performance_detailed.csv": "ec5cefa60033c0db3c92e7893c786d5ad203edfb56733edc25154628b0df9f18",
+    "run_summary.json": "1277a2d7c1055cce852b1cec1d2e70b6f79aa71f07d132de2bc0feb36e1192f1"
+  }
+}

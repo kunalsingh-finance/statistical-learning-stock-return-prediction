@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
+from .panel import align_next_month_target
 
 
 def _normalize_date(series: pd.Series) -> pd.Series:
@@ -35,8 +36,17 @@ def build_dataset(chars_path: Path, returns_path: Path, out_path: Path) -> pd.Da
     rets["DATE"] = _normalize_date(rets[date_col])
     rets["RET"] = pd.to_numeric(rets[ret_col], errors="coerce")
 
-    merged = chars.merge(rets[["permno", "DATE", "RET"]], on=["permno", "DATE"], how="inner")
+    if chars.duplicated(["permno", "DATE"]).any() or rets.duplicated(["permno", "DATE"]).any():
+        raise ValueError("Duplicate security-month keys in characteristics or returns")
+    # Shift each realized return back to the preceding feature month, by calendar
+    # month rather than row position so a missing month never changes the horizon.
+    rets["target_DATE"] = pd.to_datetime(rets["DATE"], errors="raise").dt.to_period("M").dt.to_timestamp("M")
+    rets["DATE"] = (rets["target_DATE"] - pd.offsets.MonthEnd(1)).dt.strftime("%Y-%m-%d")
+    chars["DATE"] = pd.to_datetime(chars["DATE"], errors="raise").dt.to_period("M").dt.to_timestamp("M").dt.strftime("%Y-%m-%d")
+    merged = chars.merge(rets[["permno", "DATE", "target_DATE", "RET"]], on=["permno", "DATE"], how="inner", validate="one_to_one")
     merged = merged.dropna(subset=["RET"]).sort_values(["permno", "DATE"]).reset_index(drop=True)
+    merged = align_next_month_target(merged)
+    merged["target_source"] = "supplied_CRSP_next_month_return; publication lags unverified"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_csv(out_path, index=False)
