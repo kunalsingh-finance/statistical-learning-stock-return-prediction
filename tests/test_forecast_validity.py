@@ -1,4 +1,8 @@
 import tempfile
+import json
+import shutil
+import contextlib
+import io
 import unittest
 from pathlib import Path
 
@@ -7,7 +11,8 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 
 from src.fa590_stock_return_prediction.panel import align_next_month_target, prepare_features, chronological_split, select_model
-from src.fa590_stock_return_prediction.pipeline import portfolio_performance
+from src.fa590_stock_return_prediction.pipeline import portfolio_performance, RunConfig, run_project
+from scripts.verify_outputs import verify
 from src.fa590_stock_return_prediction.prepare_wrds_merge import build_dataset
 
 
@@ -85,6 +90,40 @@ class ForecastValidityTests(unittest.TestCase):
         result = portfolio_performance(panel, np.arange(20), ["2020-01-31"], "RET")
         self.assertAlmostEqual(result["Avg_Return"], np.mean([0.16, 0.17, 0.18, 0.19]))
         self.assertEqual(result["N_Months"], 1)
+
+    def test_small_monthly_population_is_not_reported_as_empty(self):
+        panel = pd.DataFrame({"DATE": ["2020-01-31"] * 10, "RET": np.arange(10) / 100})
+        result = portfolio_performance(panel, np.arange(10), ["2020-01-31"], "RET")
+        self.assertAlmostEqual(result["Avg_Return"], 0.085)
+        self.assertEqual(result["N_Months"], 1)
+
+    def test_failed_rebuild_cannot_verify_previous_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "run_status.json").write_text(json.dumps({"status": "SUCCESS"}))
+            (root / "run_summary.json").write_text(json.dumps({"selected_model": "STALE"}))
+            with self.assertRaises(FileNotFoundError):
+                run_project(RunConfig(data_path=str(root / "missing.csv"), output_dir=root, skip_neural_network=True))
+            self.assertEqual(json.loads((root / "run_status.json").read_text())["status"], "ERROR")
+            with self.assertRaisesRegex(AssertionError, "incomplete or failed"):
+                verify(root)
+
+    def test_saved_outputs_verify_across_checkout_line_endings_and_reject_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "outputs"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "sample_outputs", root)
+            for path in root.glob("*.csv"):
+                path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+            with contextlib.redirect_stdout(io.StringIO()):
+                verify(root)
+            for path in root.glob("*.csv"):
+                path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+            with contextlib.redirect_stdout(io.StringIO()):
+                verify(root)
+            prediction_path = root / "predictions.csv"
+            prediction_path.write_bytes(prediction_path.read_bytes() + b"changed")
+            with self.assertRaisesRegex(AssertionError, "Output changed since successful run"):
+                verify(root)
 
 
 if __name__ == "__main__":

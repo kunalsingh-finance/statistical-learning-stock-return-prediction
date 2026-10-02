@@ -252,7 +252,7 @@ def portfolio_performance(df_subset: pd.DataFrame, predictions: np.ndarray, date
     monthly_returns: List[float] = []
     for date in dates_list:
         date_data = df_temp[df_temp["DATE"] == date]
-        if len(date_data) < 20:
+        if date_data.empty:
             continue
         top_n = max(1, int(np.ceil(0.2 * len(date_data))))
         top_bucket = date_data.nlargest(top_n, "Prediction")
@@ -569,7 +569,7 @@ def save_risk_return_tradeoff(port_df: pd.DataFrame, charts_dir: Path) -> None:
     plt.close()
 
 
-def run_project(config: RunConfig) -> dict:
+def _run_project(config: RunConfig) -> dict:
     set_plot_style()
     set_random_seeds(config.random_seed)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -592,6 +592,8 @@ def run_project(config: RunConfig) -> dict:
     results, training_times, history_df, rf_model = train_models(split, config)
     if not history_df.empty:
         save_nn_history(history_df, charts_dir)
+    else:
+        (charts_dir / "07_nn_training_history.png").unlink(missing_ok=True)
     save_training_times(training_times, charts_dir)
 
     performance_metrics = []
@@ -643,3 +645,27 @@ def run_project(config: RunConfig) -> dict:
     }
     (config.output_dir / "run_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
+
+
+def run_project(config: RunConfig) -> dict:
+    """Keep a failed rebuild from advertising a previous run as current."""
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    status_path = config.output_dir / "run_status.json"
+    status_path.write_text(json.dumps({"status": "BUILDING"}), encoding="utf-8")
+    try:
+        summary = _run_project(config)
+        artifacts = [*config.output_dir.glob("*.csv"), config.output_dir / "run_summary.json",
+                     * (config.output_dir / "charts").glob("*.png")]
+        def digest(path: Path) -> str:
+            raw = path.read_bytes()
+            if path.suffix in {".csv", ".json"}:
+                raw = raw.replace(b"\r\n", b"\n")
+            return hashlib.sha256(raw).hexdigest()
+
+        hashes = {path.relative_to(config.output_dir).as_posix(): digest(path)
+                  for path in sorted(artifacts)}
+        status_path.write_text(json.dumps({"status": "SUCCESS", "text_identity": "CSV/JSON CRLF normalized to LF; binary bytes unchanged", "artifact_sha256": hashes}, indent=2), encoding="utf-8")
+        return summary
+    except Exception as error:
+        status_path.write_text(json.dumps({"status": "ERROR", "error_type": type(error).__name__}), encoding="utf-8")
+        raise

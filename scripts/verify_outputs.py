@@ -1,5 +1,6 @@
 """Independently reconcile saved scores and selection to dated predictions."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,10 +9,24 @@ import pandas as pd
 
 
 def verify(directory: Path):
+    status = json.loads((directory / "run_status.json").read_text())
+    assert status["status"] == "SUCCESS", "Output generation is incomplete or failed"
+    required = {"run_summary.json", "predictions.csv", "predictive_performance_detailed.csv",
+                "portfolio_performance.csv", "feature_importance.csv"}
+    hashes = status["artifact_sha256"]
+    assert required.issubset(hashes), "Successful run record lacks required outputs"
+    for name, expected_hash in hashes.items():
+        path = directory / name
+        assert path.resolve().is_relative_to(directory.resolve()), "Artifact escapes output directory"
+        raw = path.read_bytes()
+        if path.suffix in {".csv", ".json"}:
+            raw = raw.replace(b"\r\n", b"\n")
+        assert hashlib.sha256(raw).hexdigest() == expected_hash, f"Output changed since successful run: {name}"
     summary = json.loads((directory / "run_summary.json").read_text())
     predictions = pd.read_csv(directory / "predictions.csv", parse_dates=["DATE", "target_DATE"])
     scores = pd.read_csv(directory / "predictive_performance_detailed.csv")
     portfolios = pd.read_csv(directory / "portfolio_performance.csv")
+    assert summary["configuration"]["neural_network_enabled"] or not (directory / "charts/07_nn_training_history.png").exists()
     assert not predictions.duplicated(["Model", "Dataset", "permno", "DATE"]).any()
     assert predictions["target_DATE"].eq(predictions["DATE"] + pd.offsets.MonthEnd(1)).all()
     assert np.isfinite(predictions[["RET", "Prediction"]]).all().all()
@@ -22,6 +37,7 @@ def verify(directory: Path):
         if dataset == "Test":
             mean_return = rows.groupby("DATE").apply(lambda group: group.nlargest(max(1, int(np.ceil(len(group) * 0.2))), "Prediction")["RET"].mean(), include_groups=False)
             portfolio = portfolios[portfolios["Model"].eq(model) & portfolios["Dataset"].eq(dataset)].iloc[0]
+            assert portfolio["N_Months"] == len(mean_return)
             np.testing.assert_allclose(mean_return.mean(), portfolio["Avg_Return"], rtol=1e-10, atol=1e-12)
     validation = scores[scores["Dataset"].eq("Validation")].sort_values(["MSE", "Model"])
     assert summary["selected_model"] == validation.iloc[0]["Model"]

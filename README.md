@@ -65,6 +65,8 @@ Do not redistribute restricted market data. `target_source` is metadata and is e
 
 Each run saves dated stock-level predictions, predictive metrics, top-quintile diagnostics, feature importance, charts and a summary with split ranges, input hash, runtime and configuration. `scripts/verify_outputs.py` independently recomputes MSE and top-quintile average outcomes, verifies exact calendar-month targets and split-label boundaries, and reconciles the selected model to validation scores.
 
+`run_status.json` binds the current completed outputs by SHA-256, normalizing CSV/JSON line endings to LF for Windows/Linux checkouts and hashing binary charts exactly. A failed rebuild records `ERROR`, so old files cannot pass as a fresh successful run. Disabling the optional neural network removes its previous training-history chart. Each nonempty monthly population contributes its top quintile, including small supplied panels and `--demo-stocks` values below 20.
+
 The equal-weight top forecast quintile is a gross research diagnostic. Its reported monthly mean/volatility ratio uses a zero hurdle and sample standard deviation; it is not an annualized excess-return Sharpe ratio. Transaction costs, shorting, liquidity, delistings and an investable historical universe are not modeled. Proxy response values do not establish portfolio returns.
 
 Regression tests perturb future predictors and final-test scores, validate target gaps and duplicate rejection, and check the WRDS merge's forward horizon. GitHub Actions tests the core pipeline, reconciles the saved synthetic showcase and builds a fresh synthetic run.

@@ -14,5 +14,7 @@ jobs:
       - name: Reconcile published synthetic outputs
         run: python scripts/verify_outputs.py --output-dir sample_outputs
       - name: Run clean synthetic workflow
-        run: python -m src.fa590_stock_return_prediction.run --skip-neural-network --demo-months 24 --demo-stocks 40 --rf-estimators 10 --gb-estimators 10 --output-dir outputs/ci
+        run: |
+          python -c "from pathlib import Path; p=Path('outputs/ci/charts/07_nn_training_history.png'); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('obsolete chart')"
+          python -m src.fa590_stock_return_prediction.run --skip-neural-network --demo-months 24 --demo-stocks 10 --rf-estimators 10 --gb-estimators 10 --output-dir outputs/ci
       - run: python scripts/verify_outputs.py --output-dir outputs/ci
