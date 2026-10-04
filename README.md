@@ -85,7 +85,7 @@ Each run creates:
 
 Included showcase artifacts live under `sample_outputs/`.
 
-## Skills Demonstrated
+## Modeling Methods
 
 - Cross-sectional predictive modeling
 - Financial panel data preparation
